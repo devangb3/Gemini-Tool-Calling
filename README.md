@@ -53,9 +53,22 @@ The assistant should call tools like `create_note`, `search_notes`, and `list_no
 Tools are defined in code:
 
 - Tool spec passed to OpenRouter: `backend/app/tools.py` (`TOOLS`)
-- Tool execution: `backend/app/tools.py` (`run_tool`)
+- Tool execution router: `backend/app/tools.py` (`run_tool`)
+- Tool implementations: `backend/app/tool_handlers.py` (individual handler functions)
 
-Add a new tool by (1) adding its OpenAI-style spec to `TOOLS`, and (2) adding an implementation branch in `run_tool` with the same function name.
+To add a new tool:
+1. Add its OpenAI-style spec to `TOOLS` in `backend/app/tools.py`
+2. Create a handler function in `backend/app/tool_handlers.py` (e.g., `handle_my_tool`)
+3. Register the handler in `_TOOL_HANDLERS` dictionary in `backend/app/tools.py`
+
+The handler function should have the signature:
+```python
+async def handle_my_tool(
+    *, db: AsyncIOMotorDatabase, arguments: Dict[str, Any]
+) -> Dict[str, Any]:
+    # Implementation here
+    return {"ok": True, ...}
+```
 
 ## Configuration
 
