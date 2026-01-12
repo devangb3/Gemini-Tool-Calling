@@ -172,6 +172,16 @@ async def get_session(request: Request, session_id: str) -> SessionDetail:
     return _session_detail(doc)
 
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(request: Request, session_id: str) -> Dict[str, Any]:
+    db = _db(request)
+    oid = _ensure_object_id(session_id)
+    result = await db.sessions.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
 async def _append_messages(
     *,
     db: AsyncIOMotorDatabase,

@@ -1,6 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from './api.js'
 
+function TrashIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  )
+}
+
 function formatRole(role) {
   if (role === 'user') return 'You'
   if (role === 'assistant') return 'Assistant'
@@ -82,12 +105,6 @@ export default function App() {
     return list
   }
 
-  async function loadSession(id) {
-    if (!id) return
-    const s = await apiFetch(`/api/sessions/${id}`)
-    setSession(s)
-  }
-
   async function refreshNotes(query = '') {
     if (query.trim()) {
       const list = await apiFetch(
@@ -107,7 +124,29 @@ export default function App() {
       body: JSON.stringify({}),
     })
     await refreshSessions(created.id)
-    await loadSession(created.id)
+  }
+
+  async function onDeleteSession(id) {
+    if (!id) return
+    const ok = window.confirm('Delete this conversation? This cannot be undone.')
+    if (!ok) return
+
+    setError(null)
+    try {
+      await apiFetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      setLastToolTrace([])
+
+      const list = await refreshSessions()
+      if (id === sessionId) {
+        if (list.length) {
+          setSessionId(list[0].id)
+        } else {
+          await onNewSession()
+        }
+      }
+    } catch (e) {
+      setError(e?.message || String(e))
+    }
   }
 
   async function onSend() {
@@ -149,13 +188,25 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!sessionId) return
+
+    let cancelled = false
+    setSession(null)
+    setLastToolTrace([])
+    setInput('')
+
     ;(async () => {
       try {
-        await loadSession(sessionId)
+        const s = await apiFetch(`/api/sessions/${sessionId}`)
+        if (!cancelled) setSession(s)
       } catch (e) {
-        setError(e?.message || String(e))
+        if (!cancelled) setError(e?.message || String(e))
       }
     })()
+
+    return () => {
+      cancelled = true
+    }
   }, [sessionId])
 
   return (
@@ -179,14 +230,23 @@ export default function App() {
           </div>
           <div className="list">
             {sessions.map((s) => (
-              <button
-                key={s.id}
-                className={`listItem ${s.id === sessionId ? 'active' : ''}`}
-                onClick={() => setSessionId(s.id)}
-                title={s.title}
-              >
-                <div className="listTitle">{s.title || 'Untitled'}</div>
-              </button>
+              <div className="sessionRow" key={s.id}>
+                <button
+                  className={`listItem sessionSelect ${s.id === sessionId ? 'active' : ''}`}
+                  onClick={() => setSessionId(s.id)}
+                  title={s.title}
+                >
+                  <div className="listTitle">{s.title || 'Untitled'}</div>
+                </button>
+                <button
+                  className="iconButton danger"
+                  onClick={() => onDeleteSession(s.id)}
+                  title="Delete conversation"
+                  aria-label="Delete conversation"
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </div>
             ))}
           </div>
 
@@ -200,9 +260,9 @@ export default function App() {
             <div className="chatTitle">{session?.title || 'Chat'}</div>
           </div>
 
-          <div className="messages">
+          <div className="messages" key={sessionId || 'no-session'}>
             {(session?.messages || []).map((m, idx) => (
-              <MessageBubble key={m.created_at || `${m.role}-${idx}`} message={m} />
+              <MessageBubble key={`${sessionId || 'no-session'}-${idx}`} message={m} />
             ))}
             {loading ? (
               <div className="row rowLeft">

@@ -103,6 +103,48 @@ body {
   min-height: 0;
 }
 
+.sessionRow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.sessionSelect {
+  flex: 1;
+  min-width: 0;
+}
+
+.iconButton {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.iconButton:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+.iconButton.danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.iconButton.danger:hover {
+  border-color: rgba(239, 68, 68, 0.7);
+  background: rgba(239, 68, 68, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .listItem {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
