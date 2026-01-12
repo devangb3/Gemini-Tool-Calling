@@ -8,11 +8,11 @@ Small local web app to test Gemini tool/function calling via OpenRouter, with da
 - Python 3.11+
 - Node.js 18+ (20 recommended)
 
-## 1) Start MongoDB (local)
+## 1 Start MongoDB (local)
 
 Make sure MongoDB is running and reachable (default: `mongodb://localhost:27017`).
 
-## 2) Run the backend (FastAPI)
+## 2 Run the backend (FastAPI)
 
 ```bash
 cd backend
@@ -20,6 +20,7 @@ cp .env.example .env
 ```
 
 Edit `backend/.env` and set `OPENROUTER_API_KEY`.
+If you want web search, also set `SERPER_API_KEY`.
 
 ```bash
 python -m venv .venv
@@ -28,7 +29,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-## 3) Run the frontend (React)
+## 3 Run the frontend (React)
 
 ```bash
 cd frontend
@@ -43,7 +44,7 @@ Open `http://localhost:5173`.
 - “Remember that my favorite editor is VS Code.”
 - “List my notes.”
 - “Search notes for editor.”
-- “What are the titles of some James Joyce books?”
+- “Research the environmental impact of electric vehicles and summarize key tradeoffs.”
 
 The assistant should call tools like `create_note`, `search_notes`, and `list_notes`, and you’ll see tool traces + saved notes in the UI.
 
@@ -61,3 +62,4 @@ Add a new tool by (1) adding its OpenAI-style spec to `TOOLS`, and (2) adding an
 - Backend env: `backend/.env`
   - `OPENROUTER_MODEL` defaults to `google/gemini-3-flash-preview`
   - `MONGODB_URI` defaults to `mongodb://localhost:27017`
+  - `SERPER_API_KEY` enables the `search_web` tool (web search)

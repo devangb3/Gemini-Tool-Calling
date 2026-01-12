@@ -93,11 +93,17 @@ def _note_from_doc(doc: Dict[str, Any]) -> Note:
 
 SYSTEM_PROMPT = """You are a helpful assistant in a tool-calling playground.
 
-You have access to tools for saving and searching notes in MongoDB, and searching Project Gutenberg for books.
-Use tools when it helps (e.g., when asked to remember something, store a note; when asked to recall, search/list notes).
+You have access to tools for saving and searching notes in MongoDB, and a web search tool.
+
+Use tools when it helps:
+- When asked to remember something, store it as a note.
+- When asked to recall, search or list notes.
+- For research or up-to-date facts, use web search and cite links.
+
+You may call tools multiple times, reasoning between tool calls to refine queries and decide next steps.
 
 When you call tools, keep arguments minimal and valid JSON.
-After using tools, respond to the user with a short confirmation and the requested info.
+After using tools, respond with the requested info and include relevant sources/links when you used web search.
 """
 
 
@@ -200,13 +206,13 @@ async def _run_llm_with_tools(
     llm_messages.extend(messages)
     initial_len = len(llm_messages)
 
-    for _ in range(6):
+    for _ in range(10):
         response = await create_chat_completion(
             settings=settings,
             messages=llm_messages,
             tools=TOOLS,
             tool_choice="auto",
-            parallel_tool_calls=True,
+            parallel_tool_calls=False,
         )
         choice = (response.get("choices") or [{}])[0]
         assistant_message = choice.get("message") or {"role": "assistant", "content": ""}

@@ -9,6 +9,8 @@ import httpx
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from .settings import get_settings
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -101,22 +103,66 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_gutenberg_books",
-            "description": "Search for books in the Project Gutenberg library",
+            "name": "search_web",
+            "description": "Search the web using Serper (Google Search API) to gather sources and snippets.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "search_terms": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of search terms to find books",
-                    }
+                    "query": {"type": "string", "description": "Search query"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["search", "news"],
+                        "default": "search",
+                        "description": "Search vertical",
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "default": 5,
+                        "description": "Maximum number of results to return",
+                    },
+                    "gl": {
+                        "type": "string",
+                        "default": "us",
+                        "description": "Country code for results (e.g. us, in)",
+                    },
+                    "hl": {
+                        "type": "string",
+                        "default": "en",
+                        "description": "Language code (e.g. en)",
+                    },
                 },
-                "required": ["search_terms"],
+                "required": ["query"],
             },
         },
     },
 ]
+
+
+def _clamp_int(value: Any, *, minimum: int, maximum: int, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _trim_text(value: Any, max_len: int = 400) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _pick(source: Any, keys: List[str]) -> Dict[str, Any]:
+    if not isinstance(source, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    for k in keys:
+        if k in source and source[k] is not None:
+            out[k] = source[k]
+    return out
 
 
 async def run_tool(
@@ -215,37 +261,93 @@ async def run_tool(
     if tool_name == "get_server_time":
         return {"ok": True, "utc": _utc_now().isoformat()}
 
-    if tool_name == "search_gutenberg_books":
-        search_terms = arguments.get("search_terms") or []
-        if not isinstance(search_terms, list):
-            return {"ok": False, "error": "search_terms must be an array of strings"}
-        terms = [str(t).strip() for t in search_terms if str(t).strip()]
-        if not terms:
-            return {"ok": False, "error": "search_terms is required"}
-        if len(terms) > 10:
-            terms = terms[:10]
+    if tool_name == "search_web":
+        settings = get_settings()
+        if not settings.serper_api_key:
+            return {
+                "ok": False,
+                "error": "SERPER_API_KEY is not set (add it to backend/.env).",
+            }
 
-        query = " ".join(terms)
-        url = "https://gutendex.com/books"
+        query = str(arguments.get("query") or "").strip()
+        if not query:
+            return {"ok": False, "error": "query is required"}
+
+        search_type = str(arguments.get("type") or "search").strip().lower()
+        if search_type not in {"search", "news"}:
+            search_type = "search"
+
+        num_results = _clamp_int(arguments.get("num_results"), minimum=1, maximum=10, default=5)
+        gl = str(arguments.get("gl") or settings.serper_gl or "us").strip() or "us"
+        hl = str(arguments.get("hl") or settings.serper_hl or "en").strip() or "en"
+
+        endpoint = f"https://google.serper.dev/{search_type}"
+        headers = {
+            "X-API-KEY": settings.serper_api_key,
+            "Content-Type": "application/json",
+        }
+        payload: Dict[str, Any] = {"q": query, "gl": gl, "hl": hl, "num": num_results}
+
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
-                response = await client.get(url, params={"search": query})
-                response.raise_for_status()
-                data = response.json()
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                response = await client.post(endpoint, headers=headers, json=payload)
         except Exception as exc:
-            return {"ok": False, "error": f"gutenberg lookup failed: {exc}"}
+            return {"ok": False, "error": f"serper request failed: {exc}"}
 
-        simplified: List[Dict[str, Any]] = []
-        for book in (data.get("results") or [])[:10]:
-            simplified.append(
-                {
-                    "id": book.get("id"),
-                    "title": book.get("title"),
-                    "authors": book.get("authors"),
-                }
-            )
+        if response.status_code >= 400:
+            return {
+                "ok": False,
+                "error": "serper returned an error",
+                "status": response.status_code,
+                "body": _trim_text(response.text, 800),
+            }
 
-        return {"ok": True, "results": simplified}
+        try:
+            data = response.json()
+        except Exception as exc:
+            return {"ok": False, "error": f"invalid serper json: {exc}"}
+
+        results: List[Dict[str, Any]] = []
+        if search_type == "news":
+            for item in (data.get("news") or [])[:num_results]:
+                results.append(
+                    {
+                        "title": _trim_text(item.get("title"), 200),
+                        "link": item.get("link"),
+                        "snippet": _trim_text(item.get("snippet"), 400),
+                        "source": item.get("source"),
+                        "date": item.get("date"),
+                    }
+                )
+        else:
+            for item in (data.get("organic") or [])[:num_results]:
+                results.append(
+                    {
+                        "title": _trim_text(item.get("title"), 200),
+                        "link": item.get("link"),
+                        "snippet": _trim_text(item.get("snippet"), 400),
+                        "position": item.get("position"),
+                    }
+                )
+
+        out: Dict[str, Any] = {
+            "ok": True,
+            "type": search_type,
+            "query": query,
+            "results": results,
+        }
+
+        answer_box = _pick(data.get("answerBox"), ["answer", "snippet", "title", "link"])
+        knowledge_graph = _pick(
+            data.get("knowledgeGraph"),
+            ["title", "type", "description", "website", "imageUrl"],
+        )
+        if answer_box:
+            out["answer_box"] = answer_box
+        if knowledge_graph:
+            out["knowledge_graph"] = knowledge_graph
+
+        return out
 
     return {"ok": False, "error": f"unknown tool: {tool_name}"}
 

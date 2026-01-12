@@ -28,6 +28,10 @@ class Settings(BaseSettings):
         "Gemini Tool Calling Playground", alias="OPENROUTER_TITLE"
     )
 
+    serper_api_key: Optional[str] = Field(default=None, alias="SERPER_API_KEY")
+    serper_gl: str = Field("us", alias="SERPER_GL")
+    serper_hl: str = Field("en", alias="SERPER_HL")
+
     allow_origins: str = Field("http://localhost:5173", alias="ALLOW_ORIGINS")
 
     def cors_origins(self) -> List[str]:
